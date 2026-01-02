@@ -33,7 +33,7 @@ const generateId = () => {
 };
 
 const App: React.FC = () => {
-  // --- States ---
+  // 1. Khai báo States trước
   const [projects, setProjects] = useState<StoryProject[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -76,15 +76,7 @@ const App: React.FC = () => {
       title: '', author: '', languages: ['Convert thô'], genres: ['Tiên Hiệp'], mcPersonality: ['Trầm ổn/Già dặn'], worldSetting: ['Trung Cổ/Cổ Đại'], sectFlow: ['Phàm nhân lưu']
   });
 
-  // --- Refs ---
-  const isFetchingLinksRef = useRef<boolean>(false);
-  const wakeLockRef = useRef<any>(null);
-  const activeLineRef = useRef<HTMLDivElement>(null);
-  const isReaderActiveRef = useRef<boolean>(false); 
-  const synthesisRef = useRef<SpeechSynthesis | null>(typeof window !== 'undefined' ? window.speechSynthesis : null);
-  const autoPlayNextRef = useRef<boolean>(false);
-
-  // --- Memos (Moved up to prevent TDZ) ---
+  // 2. Khai báo useMemo NGAY LẬP TỨC để tránh TDZ (Temporal Dead Zone)
   const currentProject = useMemo(() => projects.find(p => p.id === currentProjectId) || null, [projects, currentProjectId]);
 
   const sortedChapters = useMemo(() => {
@@ -95,7 +87,15 @@ const App: React.FC = () => {
   const viewingChapter = useMemo(() => sortedChapters.find(c => c.id === viewingFileId) || null, [sortedChapters, viewingFileId]);
   const viewingRawFile = useMemo(() => sortedChapters.find(c => c.id === viewingRawId) || null, [sortedChapters, viewingRawId]);
 
-  // --- Callbacks & Functions ---
+  // 3. Khai báo Refs
+  const isFetchingLinksRef = useRef<boolean>(false);
+  const wakeLockRef = useRef<any>(null);
+  const activeLineRef = useRef<HTMLDivElement>(null);
+  const isReaderActiveRef = useRef<boolean>(false); 
+  const synthesisRef = useRef<SpeechSynthesis | null>(typeof window !== 'undefined' ? window.speechSynthesis : null);
+  const autoPlayNextRef = useRef<boolean>(false);
+
+  // 4. Khai báo Functions & Callbacks
   const addToast = useCallback((message: any, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
     const id = generateId();
     setToasts(prev => [...prev, { id, message: String(message), type }]);
@@ -319,7 +319,7 @@ const App: React.FC = () => {
   const openReader = (id: string) => { setViewingFileId(id); setIsReaderUIHidden(false); isReaderActiveRef.current = true; };
   const closeReader = () => { isReaderActiveRef.current = false; stopTTS(); setViewingFileId(null); };
 
-  // --- Effects ---
+  // 5. Effects
   useEffect(() => {
     const checkKey = () => {
       const custom = localStorage.getItem('CUSTOM_GEMINI_API_KEY') || localStorage.getItem('gemini_api_key');
@@ -458,16 +458,9 @@ const App: React.FC = () => {
   }, [isProcessing, processingQueue, activeWorkers, currentProjectId, isAutoCrawlEnabled, currentProject?.lastCrawlUrl, projects, handleLinkCrawl, updateProject]);
 
   useEffect(() => {
-    if (autoPlayNextRef.current && viewingChapter && isReaderActiveRef.current) {
-        autoPlayNextRef.current = false;
-        setTimeout(() => playTTS(0), 1000);
+    if (activeTTSIndex !== -1 && activeLineRef.current) {
+        activeLineRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-  }, [viewingFileId, viewingChapter, playTTS]);
-
-  useEffect(() => {
-      if (activeTTSIndex !== -1 && activeLineRef.current) {
-          activeLineRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
   }, [activeTTSIndex]);
 
   // --- Render ---
