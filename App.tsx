@@ -33,6 +33,7 @@ const generateId = () => {
 };
 
 const App: React.FC = () => {
+  // --- States ---
   const [projects, setProjects] = useState<StoryProject[]>([]);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -43,48 +44,23 @@ const App: React.FC = () => {
   const [showNewProjectModal, setShowNewProjectModal] = useState<boolean>(false);
   const [showTTSSettings, setShowTTSSettings] = useState<boolean>(false);
   const [showSettings, setShowSettings] = useState<boolean>(false);
-  
   const [linkInput, setLinkInput] = useState<string>("");
   const [isAutoCrawlEnabled, setIsAutoCrawlEnabled] = useState<boolean>(true);
   const [isFetchingLinks, setIsFetchingLinks] = useState<boolean>(false);
-  const isFetchingLinksRef = useRef<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
-  
   const [apiKeyInput, setApiKeyInput] = useState<string>(localStorage.getItem('CUSTOM_GEMINI_API_KEY') || localStorage.getItem('gemini_api_key') || '');
   const [hasEffectiveKey, setHasEffectiveKey] = useState<boolean>(false);
-
   const [isWakeLockActive, setIsWakeLockActive] = useState<boolean>(false);
-  const wakeLockRef = useRef<any>(null);
-
   const [viewingFileId, setViewingFileId] = useState<string | null>(null);
   const [viewingRawId, setViewingRawId] = useState<string | null>(null); 
   const [toasts, setToasts] = useState<{id: string, message: string, type: string}[]>([]);
-
-  // Reader States
   const [isReaderUIHidden, setIsReaderUIHidden] = useState<boolean>(false);
   const [deviceType, setDeviceType] = useState<'mobile' | 'desktop'>('desktop');
-  
-  const activeLineRef = useRef<HTMLDivElement>(null);
-  const isReaderActiveRef = useRef<boolean>(false); 
-  const synthesisRef = useRef<SpeechSynthesis | null>(typeof window !== 'undefined' ? window.speechSynthesis : null);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [activeTTSIndex, setActiveTTSIndex] = useState<number>(-1);
   const [isTTSPaused, setIsTTSPaused] = useState<boolean>(false);
   const [isTTSPlaying, setIsTTSPlaying] = useState<boolean>(false);
-  const autoPlayNextRef = useRef<boolean>(false);
-
-  const currentProject = useMemo(() => projects.find(p => p.id === currentProjectId) || null, [projects, currentProjectId]);
-
-  // Fix: Move sortedChapters, viewingChapter, and viewingRawFile memos here to avoid TDZ errors in Effects
-  const sortedChapters = useMemo(() => {
-    if (!currentProject) return [];
-    return [...currentProject.chapters].sort((a, b) => a.orderIndex - b.orderIndex);
-  }, [currentProject]);
-
-  const viewingChapter = useMemo(() => sortedChapters.find(c => c.id === viewingFileId) || null, [sortedChapters, viewingFileId]);
-  const viewingRawFile = useMemo(() => sortedChapters.find(c => c.id === viewingRawId) || null, [sortedChapters, viewingRawId]);
-
   const [readerSettings, setReaderSettings] = useState<ReaderSettings>({
       fontSize: 20,
       bgColor: 'bg-[#f4ecd8] text-slate-900 border-[#e5dec5]',
@@ -96,58 +72,39 @@ const App: React.FC = () => {
       isAutoScrollActive: true,
       isImmersiveMode: false
   });
-
   const [newProjectInfo, setNewProjectInfo] = useState({
       title: '', author: '', languages: ['Convert thô'], genres: ['Tiên Hiệp'], mcPersonality: ['Trầm ổn/Già dặn'], worldSetting: ['Trung Cổ/Cổ Đại'], sectFlow: ['Phàm nhân lưu']
   });
 
-  useEffect(() => {
-    const checkKey = () => {
-      const custom = localStorage.getItem('CUSTOM_GEMINI_API_KEY') || localStorage.getItem('gemini_api_key');
-      setHasEffectiveKey(!!(custom && custom.trim() !== '') || !!process.env.API_KEY);
-    };
-    checkKey();
-    const inv = setInterval(checkKey, 5000);
-    return () => clearInterval(inv);
-  }, []);
+  // --- Refs ---
+  const isFetchingLinksRef = useRef<boolean>(false);
+  const wakeLockRef = useRef<any>(null);
+  const activeLineRef = useRef<HTMLDivElement>(null);
+  const isReaderActiveRef = useRef<boolean>(false); 
+  const synthesisRef = useRef<SpeechSynthesis | null>(typeof window !== 'undefined' ? window.speechSynthesis : null);
+  const autoPlayNextRef = useRef<boolean>(false);
 
-  const saveApiKey = () => {
-    const trimmed = apiKeyInput.trim();
-    localStorage.setItem('CUSTOM_GEMINI_API_KEY', trimmed);
-    setApiKeyInput(trimmed);
-    addToast("Đã lưu API Key thành công!", "success");
-    setShowSettings(false);
-  };
+  // --- Memos (Moved up to prevent TDZ) ---
+  const currentProject = useMemo(() => projects.find(p => p.id === currentProjectId) || null, [projects, currentProjectId]);
 
-  useEffect(() => {
-    const ua = navigator.userAgent;
-    if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) setDeviceType('mobile');
-    else if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Opera Mini/i.test(ua)) setDeviceType('mobile');
-    else setDeviceType('desktop');
-  }, []);
+  const sortedChapters = useMemo(() => {
+    if (!currentProject) return [];
+    return [...currentProject.chapters].sort((a, b) => a.orderIndex - b.orderIndex);
+  }, [currentProject]);
 
+  const viewingChapter = useMemo(() => sortedChapters.find(c => c.id === viewingFileId) || null, [sortedChapters, viewingFileId]);
+  const viewingRawFile = useMemo(() => sortedChapters.find(c => c.id === viewingRawId) || null, [sortedChapters, viewingRawId]);
+
+  // --- Callbacks & Functions ---
   const addToast = useCallback((message: any, type: 'success' | 'error' | 'info' | 'warning' = 'info') => {
     const id = generateId();
     setToasts(prev => [...prev, { id, message: String(message), type }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
   }, []);
 
-  // Yêu cầu WakeLock khi đang dịch hoặc đang đọc để tránh CPU ngủ
-  const requestWakeLock = async () => {
-    if (!('wakeLock' in navigator)) return;
-    try {
-        wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
-        setIsWakeLockActive(true);
-        wakeLockRef.current.addEventListener('release', () => setIsWakeLockActive(false));
-    } catch (err) { console.warn("WakeLock request failed", err); }
-  };
-
-  const releaseWakeLock = () => {
-    if (wakeLockRef.current) {
-        wakeLockRef.current.release();
-        wakeLockRef.current = null;
-    }
-  };
+  const updateProject = useCallback((id: string, updates: Partial<StoryProject>) => {
+    setProjects(prev => prev.map(p => p.id === id ? { ...p, ...updates, lastModified: Date.now() } : p));
+  }, []);
 
   const stopTTS = useCallback(() => {
     if (synthesisRef.current) synthesisRef.current.cancel();
@@ -156,7 +113,6 @@ const App: React.FC = () => {
     setIsTTSPlaying(false);
   }, []);
 
-  // Declaring playTTS early so it can be used in effects and other callbacks
   const playTTS = useCallback((startIndex: number = 0) => {
     if (!isReaderActiveRef.current || !viewingChapter?.translatedContent || !synthesisRef.current) { 
         stopTTS(); 
@@ -167,17 +123,14 @@ const App: React.FC = () => {
     const paragraphs = viewingChapter.translatedContent.split('\n').filter(p => p.trim());
     
     if (startIndex >= paragraphs.length) { 
-        // Đã đọc xong nội dung chương, tìm chương tiếp theo
         const currentIndex = sortedChapters.findIndex(c => c.id === viewingChapter.id);
         if (currentIndex !== -1 && currentIndex < sortedChapters.length - 1) {
             const nextCh = sortedChapters[currentIndex + 1];
             if (nextCh.status === FileStatus.COMPLETED) {
                 autoPlayNextRef.current = true;
                 setViewingFileId(nextCh.id);
-                addToast(`Hoàn tất. Đang chuyển chương tiếp theo...`, "info");
+                addToast(`Chuyển chương: ${nextCh.name}`, "info");
                 return;
-            } else {
-                addToast(`Chương tiếp theo chưa dịch xong. Đang chờ...`, "warning");
             }
         }
         stopTTS(); 
@@ -211,81 +164,80 @@ const App: React.FC = () => {
     };
 
     synthesisRef.current.speak(utterance);
-    
-    // Cập nhật trạng thái MediaSession
-    if ('mediaSession' in navigator) {
-        navigator.mediaSession.playbackState = 'playing';
-    }
   }, [viewingChapter, sortedChapters, readerSettings, stopTTS, isTTSPaused, addToast]);
 
-  const toggleTTSPause = () => {
+  const toggleTTSPause = useCallback(() => {
     if (!synthesisRef.current) return;
     if (synthesisRef.current.speaking) {
         if (synthesisRef.current.paused) { 
             synthesisRef.current.resume(); 
             setIsTTSPaused(false); 
-            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
         } else { 
             synthesisRef.current.pause(); 
             setIsTTSPaused(true); 
-            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
         }
     } else {
         playTTS(activeTTSIndex === -1 ? 0 : activeTTSIndex);
     }
-  };
+  }, [playTTS, activeTTSIndex]);
 
-  useEffect(() => {
-    if (isProcessing || (isTTSPlaying && !isTTSPaused)) {
-        requestWakeLock();
-    } else {
-        releaseWakeLock();
+  const handleLinkCrawl = useCallback(async (targetUrl?: string) => {
+    if (!currentProject || isFetchingLinksRef.current) return;
+    const startUrl = targetUrl || linkInput;
+    if (!startUrl) return;
+    isFetchingLinksRef.current = true;
+    setIsFetchingLinks(true);
+    setShowLinkModal(false);
+    try {
+        const result = await fetchContentFromUrl(startUrl);
+        const nextOrder = currentProject.chapters.length;
+        const chapterId = generateId();
+        const newChapter: FileItem = { 
+            id: chapterId, name: translateChapterTitle(result.title), orderIndex: nextOrder,
+            content: result.content, translatedContent: null, status: FileStatus.IDLE, 
+            retryCount: 0, originalCharCount: result.content.length, remainingRawCharCount: 0 
+        };
+        setProjects(prev => prev.map(p => p.id === currentProject.id ? { 
+            ...p, chapters: [...p.chapters, newChapter], lastCrawlUrl: result.nextUrl || startUrl, lastModified: Date.now()
+        } : p));
+        if (isProcessing) setProcessingQueue(prev => [...new Set([...prev, chapterId])]);
+    } catch (e: any) { 
+      addToast(e.message, "error");
+      if (isProcessing) setIsAutoCrawlEnabled(false);
+    } finally {
+        isFetchingLinksRef.current = false; setIsFetchingLinks(false); setLinkInput("");
     }
-    return () => releaseWakeLock();
-  }, [isProcessing, isTTSPlaying, isTTSPaused]);
+  }, [currentProject, linkInput, isProcessing, addToast]);
 
-  // Media Session API - Tích hợp trình điều khiển vào màn hình khóa
-  useEffect(() => {
-    if ('mediaSession' in navigator && viewingChapter) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-            title: String(viewingChapter.name),
-            artist: String(currentProject?.info.title),
-            album: 'AI Novel Pro - Audio Book',
-            artwork: [
-                { src: 'https://cdn-icons-png.flaticon.com/512/3502/3502124.png', sizes: '512x512', type: 'image/png' }
-            ]
-        });
-
-        navigator.mediaSession.setActionHandler('play', () => toggleTTSPause());
-        navigator.mediaSession.setActionHandler('pause', () => toggleTTSPause());
-        navigator.mediaSession.setActionHandler('previoustrack', () => playTTS(activeTTSIndex - 1));
-        navigator.mediaSession.setActionHandler('nexttrack', () => playTTS(activeTTSIndex + 1));
-        navigator.mediaSession.setActionHandler('stop', () => stopTTS());
+  const startTranslation = useCallback((retryAll: boolean = false) => {
+    if (!currentProject) return;
+    const toProcess = currentProject.chapters.filter(c => retryAll ? true : (c.status === FileStatus.IDLE || c.status === FileStatus.ERROR)).map(c => c.id);
+    if (toProcess.length === 0) {
+        if (isAutoCrawlEnabled && currentProject.lastCrawlUrl) {
+            handleLinkCrawl(currentProject.lastCrawlUrl);
+            setIsProcessing(true);
+            return;
+        }
+        addToast("Không có chương mới", "info");
+        return;
     }
-  }, [viewingChapter, activeTTSIndex, toggleTTSPause, playTTS, stopTTS, currentProject]);
+    setProcessingQueue(prev => [...new Set([...prev, ...toProcess])]);
+    setIsProcessing(true);
+  }, [currentProject, isAutoCrawlEnabled, handleLinkCrawl, addToast]);
 
-  useEffect(() => {
-    const updateVoices = () => {
-        if (!synthesisRef.current) return;
-        let voices = synthesisRef.current.getVoices();
-        let filtered = voices.filter(v => v.lang.startsWith('vi') || v.lang.startsWith('en'));
-        setAvailableVoices(filtered);
-    };
-    updateVoices();
-    if (synthesisRef.current) synthesisRef.current.onvoiceschanged = updateVoices;
-  }, []);
+  const stopTranslation = useCallback(() => {
+    setIsProcessing(false); 
+    setProcessingQueue([]);
+    addToast("Đã dừng tiến trình dịch", "info");
+  }, [addToast]);
 
-  useEffect(() => { getAllProjects().then(setProjects); }, []);
-
-  const updateProject = (id: string, updates: Partial<StoryProject>) => {
-    setProjects(prev => prev.map(p => p.id === id ? { ...p, ...updates, lastModified: Date.now() } : p));
+  const saveApiKey = () => {
+    const trimmed = apiKeyInput.trim();
+    localStorage.setItem('CUSTOM_GEMINI_API_KEY', trimmed);
+    setApiKeyInput(trimmed);
+    addToast("Đã lưu API Key thành công!", "success");
+    setShowSettings(false);
   };
-
-  const persistProject = async (project: StoryProject) => {
-    try { await saveProject(project); } catch (e) { console.error("Save failed", e); }
-  };
-
-  useEffect(() => { if (currentProject) persistProject(currentProject); }, [currentProject?.lastModified]);
 
   const handleAIAnalyze = async () => {
     if (!currentProject) return;
@@ -346,55 +298,109 @@ const App: React.FC = () => {
     updateProject(currentProject.id, { chapters: [...currentProject.chapters, ...newChapters] });
   };
 
-  const handleLinkCrawl = async (targetUrl?: string) => {
-    if (!currentProject || isFetchingLinksRef.current) return;
-    const startUrl = targetUrl || linkInput;
-    if (!startUrl) return;
-    isFetchingLinksRef.current = true;
-    setIsFetchingLinks(true);
-    setShowLinkModal(false);
+  const handleExportTxt = () => {
+    if (!currentProject) return;
+    const content = createMergedFile(currentProject.chapters);
+    downloadTextFile(`${currentProject.info.title}.txt`, content);
+    addToast("Đã xuất file TXT", "success");
+  };
+
+  const handleExportEpub = async () => {
+    if (!currentProject) return;
     try {
-        const result = await fetchContentFromUrl(startUrl);
-        const nextOrder = currentProject.chapters.length;
-        const chapterId = generateId();
-        const newChapter: FileItem = { 
-            id: chapterId, name: translateChapterTitle(result.title), orderIndex: nextOrder,
-            content: result.content, translatedContent: null, status: FileStatus.IDLE, 
-            retryCount: 0, originalCharCount: result.content.length, remainingRawCharCount: 0 
-        };
-        setProjects(prev => prev.map(p => p.id === currentProject.id ? { 
-            ...p, chapters: [...p.chapters, newChapter], lastCrawlUrl: result.nextUrl || startUrl, lastModified: Date.now()
-        } : p));
-        if (isProcessing) setProcessingQueue(prev => [...new Set([...prev, chapterId])]);
-    } catch (e: any) { 
-      addToast(e.message, "error");
-      if (isProcessing) setIsAutoCrawlEnabled(false);
-    } finally {
-        isFetchingLinksRef.current = false; setIsFetchingLinks(false); setLinkInput("");
+        addToast("Đang tạo EPUB...", "info");
+        const blob = await generateEpub(currentProject.chapters, currentProject.info);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = `${currentProject.info.title}.epub`; a.click();
+        URL.revokeObjectURL(url);
+    } catch (e: any) { addToast(e.message, "error"); }
+  };
+
+  const openReader = (id: string) => { setViewingFileId(id); setIsReaderUIHidden(false); isReaderActiveRef.current = true; };
+  const closeReader = () => { isReaderActiveRef.current = false; stopTTS(); setViewingFileId(null); };
+
+  // --- Effects ---
+  useEffect(() => {
+    const checkKey = () => {
+      const custom = localStorage.getItem('CUSTOM_GEMINI_API_KEY') || localStorage.getItem('gemini_api_key');
+      setHasEffectiveKey(!!(custom && custom.trim() !== '') || !!process.env.API_KEY);
+    };
+    checkKey();
+    const inv = setInterval(checkKey, 5000);
+    return () => clearInterval(inv);
+  }, []);
+
+  useEffect(() => {
+    const ua = navigator.userAgent;
+    if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) setDeviceType('mobile');
+    else if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Opera Mini/i.test(ua)) setDeviceType('mobile');
+    else setDeviceType('desktop');
+  }, []);
+
+  const requestWakeLock = async () => {
+    if (!('wakeLock' in navigator)) return;
+    try {
+        wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+        setIsWakeLockActive(true);
+        wakeLockRef.current.addEventListener('release', () => setIsWakeLockActive(false));
+    } catch (err) { console.warn("WakeLock failed"); }
+  };
+
+  const releaseWakeLock = () => {
+    if (wakeLockRef.current) {
+        wakeLockRef.current.release();
+        wakeLockRef.current = null;
     }
   };
 
-  const startTranslation = useCallback((retryAll: boolean = false) => {
-    if (!currentProject) return;
-    const toProcess = currentProject.chapters.filter(c => retryAll ? true : (c.status === FileStatus.IDLE || c.status === FileStatus.ERROR)).map(c => c.id);
-    if (toProcess.length === 0) {
-        if (isAutoCrawlEnabled && currentProject.lastCrawlUrl) {
-            handleLinkCrawl(currentProject.lastCrawlUrl);
-            setIsProcessing(true);
-            return;
-        }
-        addToast("Không có chương mới để dịch", "info");
-        return;
+  useEffect(() => {
+    if (isProcessing || isTTSPlaying) {
+        requestWakeLock();
+    } else {
+        releaseWakeLock();
     }
-    setProcessingQueue(prev => [...new Set([...prev, ...toProcess])]);
-    setIsProcessing(true);
-  }, [currentProject, isAutoCrawlEnabled]);
+    return () => releaseWakeLock();
+  }, [isProcessing, isTTSPlaying]);
 
-  const stopTranslation = useCallback(() => {
-    setIsProcessing(false); 
-    setProcessingQueue([]);
-    addToast("Đã dừng tiến trình dịch", "info");
+  useEffect(() => {
+    if ('mediaSession' in navigator && viewingChapter) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+            title: String(viewingChapter.name),
+            artist: String(currentProject?.info.title),
+            album: 'AI Novel Pro TTS',
+            artwork: [
+                { src: 'https://cdn-icons-png.flaticon.com/512/3502/3502124.png', sizes: '512x512', type: 'image/png' }
+            ]
+        });
+
+        navigator.mediaSession.setActionHandler('play', () => toggleTTSPause());
+        navigator.mediaSession.setActionHandler('pause', () => toggleTTSPause());
+        navigator.mediaSession.setActionHandler('previoustrack', () => playTTS(activeTTSIndex - 1));
+        navigator.mediaSession.setActionHandler('nexttrack', () => playTTS(activeTTSIndex + 1));
+    }
+  }, [viewingChapter, activeTTSIndex, currentProject, playTTS, toggleTTSPause]);
+
+  useEffect(() => {
+    const updateVoices = () => {
+        if (!synthesisRef.current) return;
+        let voices = synthesisRef.current.getVoices();
+        let filtered = voices.filter(v => v.lang.startsWith('vi') || v.lang.startsWith('en'));
+        setAvailableVoices(filtered);
+    };
+    updateVoices();
+    if (synthesisRef.current) synthesisRef.current.onvoiceschanged = updateVoices;
   }, []);
+
+  useEffect(() => { getAllProjects().then(setProjects); }, []);
+
+  useEffect(() => { 
+    if (currentProject) {
+        const persistProject = async (project: StoryProject) => {
+            try { await saveProject(project); } catch (e) { console.error("Save failed", e); }
+        };
+        persistProject(currentProject); 
+    }
+  }, [currentProject?.lastModified]);
 
   useEffect(() => {
     if (!isProcessing || !currentProjectId) return;
@@ -449,35 +455,14 @@ const App: React.FC = () => {
         }
     };
     processBatch();
-  }, [isProcessing, processingQueue, activeWorkers, currentProjectId, isAutoCrawlEnabled, currentProject?.lastCrawlUrl]);
+  }, [isProcessing, processingQueue, activeWorkers, currentProjectId, isAutoCrawlEnabled, currentProject?.lastCrawlUrl, projects, handleLinkCrawl, updateProject]);
 
-  const openReader = (id: string) => { setViewingFileId(id); setIsReaderUIHidden(false); isReaderActiveRef.current = true; };
-  const closeReader = () => { isReaderActiveRef.current = false; stopTTS(); setViewingFileId(null); };
-
-  // Fix: Implemented missing export functions handleExportTxt and handleExportEpub
-  const handleExportTxt = () => {
-    if (!currentProject) return;
-    const content = createMergedFile(currentProject.chapters);
-    downloadTextFile(`${currentProject.info.title}.txt`, content);
-    addToast("Đã xuất file TXT thành công!", "success");
-  };
-
-  const handleExportEpub = async () => {
-    if (!currentProject) return;
-    try {
-        addToast("Đang tạo file EPUB...", "info");
-        const blob = await generateEpub(currentProject.chapters, currentProject.info);
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${currentProject.info.title}.epub`;
-        a.click();
-        URL.revokeObjectURL(url);
-        addToast("Đã xuất file EPUB thành công!", "success");
-    } catch (e: any) {
-        addToast("Lỗi khi tạo EPUB: " + e.message, "error");
+  useEffect(() => {
+    if (autoPlayNextRef.current && viewingChapter && isReaderActiveRef.current) {
+        autoPlayNextRef.current = false;
+        setTimeout(() => playTTS(0), 1000);
     }
-  };
+  }, [viewingFileId, viewingChapter, playTTS]);
 
   useEffect(() => {
       if (activeTTSIndex !== -1 && activeLineRef.current) {
@@ -485,14 +470,7 @@ const App: React.FC = () => {
       }
   }, [activeTTSIndex]);
 
-  useEffect(() => {
-    if (autoPlayNextRef.current && viewingChapter && isReaderActiveRef.current) {
-        autoPlayNextRef.current = false;
-        // Chờ 1 giây để UI nạp kịp rồi mới phát tiếp
-        setTimeout(() => playTTS(0), 1000);
-    }
-  }, [viewingFileId, viewingChapter, playTTS]);
-
+  // --- Render ---
   return (
     <div className="flex h-screen w-full bg-slate-50 overflow-hidden font-sans">
       <aside className={`fixed inset-y-0 left-0 z-50 w-72 glass-panel border-r border-slate-200 transition-transform duration-300 lg:relative lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -518,11 +496,11 @@ const App: React.FC = () => {
           <div className="p-6 border-t border-slate-100 space-y-3">
             <button onClick={() => setShowSettings(true)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all font-semibold ${hasEffectiveKey ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
               {hasEffectiveKey ? <ShieldCheck className="w-5 h-5 text-emerald-600" /> : <Key className="w-5 h-5 text-rose-500" />}
-              {hasEffectiveKey ? "API Key: Đã Sẵn Sàng" : "Chưa Thiết Lập Key"}
+              {hasEffectiveKey ? "API Key: Sẵn Sàng" : "Chưa Thiết Lập Key"}
             </button>
             <div className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl transition-all font-semibold ${isWakeLockActive ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
                 {isWakeLockActive ? <Activity className="w-5 h-5 animate-pulse" /> : <Moon className="w-5 h-5" />}
-                {isWakeLockActive ? "Chạy ưu tiên (Background)" : "Chế độ chờ"}
+                {isWakeLockActive ? "Đang chạy ưu tiên" : "Chế độ chờ"}
             </div>
           </div>
         </div>
@@ -544,12 +522,12 @@ const App: React.FC = () => {
               <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto"><div className="w-24 h-24 bg-white rounded-[2rem] flex items-center justify-center mb-8 text-slate-300 shadow-xl border border-slate-100"><Book className="w-12 h-12" /></div><h2 className="text-2xl font-bold text-slate-800 mb-3 font-display">Bắt đầu dịch thuật!</h2><button onClick={() => setShowNewProjectModal(true)} className="flex items-center gap-3 bg-indigo-600 text-white font-bold py-5 px-10 rounded-3xl shadow-2xl active:scale-95 transition-all text-lg"><Plus className="w-6 h-6" />Tạo Dự Án</button></div>
           ) : (
             <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
-                {(isProcessing || isTTSPlaying) && (
-                    <div className="bg-indigo-50 border-2 border-indigo-100 p-6 rounded-[2rem] flex items-center gap-4 text-indigo-800 shadow-sm animate-pulse">
-                        <BatteryWarning className="w-6 h-6 shrink-0 text-indigo-600" />
+                {isProcessing && (
+                    <div className="bg-amber-50 border-2 border-amber-100 p-6 rounded-[2rem] flex items-center gap-4 text-amber-800 shadow-sm animate-pulse">
+                        <BatteryWarning className="w-6 h-6 shrink-0" />
                         <div>
-                            <p className="font-bold text-sm">Hỗ trợ chạy ngầm đang kích hoạt:</p>
-                            <p className="text-xs opacity-80">Tiến trình sẽ tự động cào, dịch và phát âm thanh ngay cả khi tắt màn hình. Đảm bảo bạn đã tắt chế độ "Tiết kiệm pin" cho ứng dụng này trong cài đặt Android.</p>
+                            <p className="font-bold text-sm">Lưu ý chạy ngầm:</p>
+                            <p className="text-xs opacity-80">Vui lòng không tắt hoàn toàn ứng dụng và đảm bảo pin không ở chế độ "Tiết kiệm" để tiến trình dịch không bị ngắt quãng khi tắt màn hình.</p>
                         </div>
                     </div>
                 )}
@@ -593,7 +571,7 @@ const App: React.FC = () => {
       {showSettings && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md">
           <div className="bg-white rounded-[3rem] w-full max-w-xl p-12 shadow-premium space-y-8 animate-in zoom-in-95 duration-300 relative">
-            <h3 className="font-bold text-2xl font-display text-slate-800">Cấu hình API Key</h3>
+            <h3 className="font-bold text-2xl font-display text-slate-800">Cài đặt API Key</h3>
             <div className="space-y-4">
               <label className="text-sm font-bold text-slate-700 px-1">Nhập Gemini API Key</label>
               <input type="password" placeholder="Dán AIza... Key của bạn tại đây" value={apiKeyInput} onChange={(e) => setApiKeyInput(e.target.value)} className="w-full p-6 rounded-[1.5rem] bg-slate-50 border-2 border-slate-100 focus:border-indigo-500 outline-none font-mono text-sm transition-all shadow-inner" />
@@ -612,7 +590,7 @@ const App: React.FC = () => {
                 <button onClick={closeReader} className="p-2 hover:bg-black/10 rounded-2xl"><ArrowRight className="w-6 h-6 rotate-180" /></button>
                 <div className="flex flex-col items-center max-w-[50%]">
                     <h3 className="font-bold text-sm truncate w-full text-center">{String(viewingChapter.name)}</h3>
-                    {isTTSPlaying && <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping"></div><span className="text-[9px] font-bold text-indigo-600 uppercase">Phát âm thanh</span></div>}
+                    {isTTSPlaying && <div className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping"></div><span className="text-[9px] font-bold text-indigo-600 uppercase">Đang phát âm thanh</span></div>}
                 </div>
                 <button onClick={() => setShowTTSSettings(!showTTSSettings)} className={`p-3 rounded-2xl transition-all ${showTTSSettings ? 'bg-indigo-600 text-white' : 'hover:bg-black/10'}`}><Sliders className="w-5 h-5" /></button>
               </div>
@@ -682,7 +660,7 @@ const App: React.FC = () => {
       )}
 
       <div className="fixed bottom-8 right-8 z-[200] flex flex-col gap-4 pointer-events-none">{toasts.map(t => (<div key={t.id} className={`pointer-events-auto flex items-center gap-4 px-8 py-5 rounded-[2rem] shadow-soft border-2 animate-in slide-in-from-right duration-500 min-w-[320px] backdrop-blur-md ${t.type === 'success' ? 'bg-emerald-50/90 text-emerald-800 border-emerald-100' : t.type === 'error' ? 'bg-rose-50/90 text-rose-800 border-rose-100' : 'bg-white/90 text-slate-800 border-slate-100'}`}><div className={`p-2 rounded-xl ${t.type === 'success' ? 'bg-emerald-500' : t.type === 'error' ? 'bg-rose-500' : 'bg-indigo-500'} text-white`}>{t.type === 'success' ? <CheckCircle className="w-5 h-5" /> : t.type === 'error' ? <AlertCircle className="w-5 h-5" /> : <Info className="w-5 h-5" />}</div><span className="font-bold text-sm">{t.message}</span></div>))}</div>
-      {!viewingFileId && (isFetchingLinks || isProcessing) && (<div className="fixed bottom-10 left-10 z-[150] glass-panel p-5 rounded-[2.5rem] shadow-2xl flex items-center gap-5"><div className="w-12 h-12 rounded-full border-4 border-slate-100 border-t-indigo-600 animate-spin" /><div className="pr-4"><p className="font-bold text-sm text-slate-800 uppercase tracking-widest">{isProcessing ? 'Hệ thống đang dịch' : 'Cào dữ liệu'}</p><p className="text-[10px] font-bold text-indigo-500 opacity-70">SYSTEM ACTIVE • 2.5 FLASH</p></div></div>)}
+      {!viewingFileId && (isFetchingLinks || isProcessing) && (<div className="fixed bottom-10 left-10 z-[150] glass-panel p-5 rounded-[2.5rem] shadow-2xl flex items-center gap-5"><div className="w-12 h-12 rounded-full border-4 border-slate-100 border-t-indigo-600 animate-spin" /><div className="pr-4"><p className="font-bold text-sm text-slate-800 uppercase tracking-widest">{isProcessing ? 'Dịch tự động' : 'Cào dữ liệu'}</p><p className="text-[10px] font-bold text-indigo-500 opacity-70">SYSTEM ACTIVE • 2.5 FLASH</p></div></div>)}
     </div>
   );
 };
